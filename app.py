@@ -5,6 +5,8 @@ import os
 from datetime import datetime
 import logging
 import asyncio
+import threading
+from functools import wraps
 
 # === Configuration ===
 BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'
@@ -17,11 +19,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === Initialize Bot (NO Application - just Bot) ===
+# === Initialize Bot ===
 bot = Bot(token=BOT_TOKEN)
 
 # === Flask App ===
 app = Flask(__name__)
+
+# === Global event loop for async operations ===
+loop = None
+loop_thread = None
+
+def start_background_loop():
+    """Start event loop in background thread"""
+    global loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+def run_in_background_loop(coro):
+    """Run coroutine in background event loop"""
+    global loop, loop_thread
+    
+    if loop is None or loop_thread is None or not loop_thread.is_alive():
+        loop_thread = threading.Thread(target=start_background_loop, daemon=True)
+        loop_thread.start()
+        # Give the thread time to start
+        import time
+        time.sleep(0.1)
+    
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=30)  # 30 second timeout
 
 # === Create CSV file with headers if it doesn't exist ===
 def initialize_csv():
@@ -99,16 +126,6 @@ async def process_update(update):
     except Exception as e:
         logger.error(f"Error processing update: {e}")
 
-# === Async helper function ===
-def run_async(coro):
-    """Helper function to run async code in sync context"""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
 # === Telegram Webhook Endpoint ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -117,8 +134,8 @@ def webhook():
         if json_data:
             update = Update.de_json(json_data, bot)
             
-            # Process update directly
-            run_async(process_update(update))
+            # Process update in background loop
+            run_in_background_loop(process_update(update))
             
             return jsonify({"status": "ok"})
         else:
@@ -141,8 +158,8 @@ def send_reminder():
             "Let's maintain full compliance ✔"
         )
         
-        # Send message asynchronously
-        run_async(
+        # Send message in background loop
+        run_in_background_loop(
             bot.send_message(
                 chat_id='-4983762228', 
                 text=message, 
@@ -162,8 +179,9 @@ def send_reminder():
 def home():
     return jsonify({
         "status": "e-Hadir Webhook Bot is running",
-        "version": "2.1 - Python 3.13 Compatible",
-        "python_telegram_bot": "20.3"
+        "version": "2.2 - Fixed Async",
+        "python_telegram_bot": "20.3",
+        "loop_status": "active" if loop and not loop.is_closed() else "inactive"
     })
 
 @app.route("/logs", methods=["GET"])
@@ -188,15 +206,34 @@ def view_logs():
 def test_bot():
     """Test endpoint to check if bot is working"""
     try:
-        # Get bot info
-        bot_info = run_async(bot.get_me())
+        # Get bot info in background loop
+        bot_info = run_in_background_loop(bot.get_me())
         return jsonify({
             "status": "Bot is working",
             "bot_name": bot_info.first_name,
-            "bot_username": bot_info.username
+            "bot_username": bot_info.username,
+            "bot_id": bot_info.id
         })
     except Exception as e:
         logger.error(f"Bot test error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/webhook_info", methods=["GET"])
+def webhook_info():
+    """Get current webhook information"""
+    try:
+        webhook_info = run_in_background_loop(bot.get_webhook_info())
+        return jsonify({
+            "url": webhook_info.url,
+            "has_custom_certificate": webhook_info.has_custom_certificate,
+            "pending_update_count": webhook_info.pending_update_count,
+            "last_error_date": webhook_info.last_error_date,
+            "last_error_message": webhook_info.last_error_message,
+            "max_connections": webhook_info.max_connections,
+            "allowed_updates": webhook_info.allowed_updates
+        })
+    except Exception as e:
+        logger.error(f"Webhook info error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # === Start App ===
@@ -204,10 +241,13 @@ if __name__ == "__main__":
     # Initialize CSV file
     initialize_csv()
     
+    # Start background event loop
+    logger.info("Starting background event loop...")
+    
     # Set webhook
     webhook_url = "https://ehadir.onrender.com/webhook"
     try:
-        result = run_async(bot.set_webhook(webhook_url))
+        result = run_in_background_loop(bot.set_webhook(webhook_url))
         if result:
             logger.info(f"✅ Webhook set successfully to: {webhook_url}")
         else:
@@ -217,5 +257,5 @@ if __name__ == "__main__":
     
     # Start Flask app
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Starting Flask app on port {port} (Python 3.13 Compatible)")
+    logger.info(f"🚀 Starting Flask app on port {port} (Fixed Async)")
     app.run(host="0.0.0.0", port=port, debug=False)
