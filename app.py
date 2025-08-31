@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 import logging
 import asyncio
-import threading
 
 # === Configuration ===
 BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'
@@ -174,22 +173,6 @@ def view_logs():
         logger.error(f"Error reading logs: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/set_webhook", methods=["POST"])
-def set_webhook():
-    """Manually set webhook (useful for debugging)"""
-    try:
-        webhook_url = request.json.get('url', 'https://ehadir.onrender.com/webhook')
-        result = run_async(application.bot.set_webhook(webhook_url))
-        
-        if result:
-            return jsonify({"status": "Webhook set successfully", "url": webhook_url})
-        else:
-            return jsonify({"status": "Failed to set webhook"}), 500
-            
-    except Exception as e:
-        logger.error(f"Error setting webhook: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
 # === Start App ===
 if __name__ == "__main__":
     # Initialize CSV file
@@ -210,4 +193,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"🚀 Starting Flask app on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
