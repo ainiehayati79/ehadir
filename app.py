@@ -174,6 +174,34 @@ def send_reminder():
         logger.error(f"Reminder error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/cron/remind", methods=["GET"])
+def cron_remind():
+    """Lightweight endpoint for cron job - minimal response"""
+    try:
+        today = datetime.today().strftime('%d-%m-%Y')
+        message = (
+            f"🔔 *e-Hadir Reminder* ({today})\n\n"
+            "✅ Please ensure:\n"
+            "- Thumb-in *7:30 to 9.00 AM*\n"
+            "- Thumb-out *1 minute before your official end time*\n\n"
+            f"📎 *e-Hadir record for {today}*\n"
+            "Let's maintain full compliance ✔"
+        )
+        
+        run_in_background_loop(
+            bot.send_message(
+                chat_id='-4983762228', 
+                text=message, 
+                parse_mode="Markdown"
+            )
+        )
+        
+        return "SENT"  # Minimal response for cron job
+        
+    except Exception as e:
+        logger.error(f"Cron reminder error: {e}")
+        return "FAILED"
+
 # === Health Check ===
 @app.route("/")
 def home():
