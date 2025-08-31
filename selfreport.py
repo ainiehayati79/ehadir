@@ -4,8 +4,8 @@ from datetime import datetime
 import csv
 
 selfreport_bp = Blueprint('selfreport', __name__)
-BOT_TOKEN = 'YOUR_REAL_BOT_TOKEN'
-CHAT_ID = 'YOUR_GROUP_CHAT_ID'
+BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'  # << your actual bot token here
+CHAT_ID = '-4983762228'                     # << your actual chat ID here (include the minus)
 LOG_FILE = 'self_report_log.csv'
 
 @selfreport_bp.route("/selfreport", methods=["POST"])
