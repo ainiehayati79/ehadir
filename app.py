@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 import csv
 import os
 from datetime import datetime
@@ -18,8 +17,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === Initialize Bot and Application ===
-application = Application.builder().token(BOT_TOKEN).build()
+# === Initialize Bot (NO Application - just Bot) ===
+bot = Bot(token=BOT_TOKEN)
 
 # === Flask App ===
 app = Flask(__name__)
@@ -31,8 +30,8 @@ def initialize_csv():
             writer = csv.writer(file)
             writer.writerow(['User ID', 'Full Name', 'Timestamp'])
 
-# === /selfreport Command ===
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# === /selfreport Command Handler ===
+async def handle_selfreport_command(update):
     try:
         user_id = update.effective_user.id
         keyboard = [[
@@ -42,15 +41,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "Click below to confirm your self-reporting:", 
+        await bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Click below to confirm your self-reporting:",
             reply_markup=reply_markup
         )
+        logger.info(f"Selfreport command handled for user {update.effective_user.full_name}")
     except Exception as e:
-        logger.error(f"Error in start command: {e}")
+        logger.error(f"Error in selfreport command: {e}")
 
 # === Callback Button Handler ===
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_callback_query(update):
     query = update.callback_query
     user = query.from_user
     data = query.data
@@ -84,9 +85,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error logging self-report: {e}")
         await query.answer("❌ Error logging self-report. Please try again.", show_alert=True)
 
-# === Register Handlers ===
-application.add_handler(CommandHandler("selfreport", start))
-application.add_handler(CallbackQueryHandler(button_handler))
+# === Process Update Function ===
+async def process_update(update):
+    try:
+        # Handle /selfreport command
+        if update.message and update.message.text == '/selfreport':
+            await handle_selfreport_command(update)
+        
+        # Handle callback queries (button presses)
+        elif update.callback_query:
+            await handle_callback_query(update)
+            
+    except Exception as e:
+        logger.error(f"Error processing update: {e}")
 
 # === Async helper function ===
 def run_async(coro):
@@ -104,10 +115,10 @@ def webhook():
     try:
         json_data = request.get_json(force=True)
         if json_data:
-            update = Update.de_json(json_data, application.bot)
+            update = Update.de_json(json_data, bot)
             
-            # Process update in async context
-            run_async(application.process_update(update))
+            # Process update directly
+            run_async(process_update(update))
             
             return jsonify({"status": "ok"})
         else:
@@ -132,7 +143,7 @@ def send_reminder():
         
         # Send message asynchronously
         run_async(
-            application.bot.send_message(
+            bot.send_message(
                 chat_id='-4983762228', 
                 text=message, 
                 parse_mode="Markdown"
@@ -151,8 +162,8 @@ def send_reminder():
 def home():
     return jsonify({
         "status": "e-Hadir Webhook Bot is running",
-        "version": "2.0",
-        "python_telegram_bot": "20.7"
+        "version": "2.1 - Python 3.13 Compatible",
+        "python_telegram_bot": "20.3"
     })
 
 @app.route("/logs", methods=["GET"])
@@ -164,13 +175,28 @@ def view_logs():
                 reader = csv.reader(file)
                 logs = list(reader)
                 return jsonify({
-                    "total_entries": len(logs) - 1,  # Exclude header
-                    "recent_logs": logs[-10:]  # Return last 10 entries
+                    "total_entries": len(logs) - 1 if len(logs) > 0 else 0,
+                    "recent_logs": logs[-10:] if len(logs) > 0 else []
                 })
         else:
             return jsonify({"logs": [], "total_entries": 0})
     except Exception as e:
         logger.error(f"Error reading logs: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/test", methods=["GET"])
+def test_bot():
+    """Test endpoint to check if bot is working"""
+    try:
+        # Get bot info
+        bot_info = run_async(bot.get_me())
+        return jsonify({
+            "status": "Bot is working",
+            "bot_name": bot_info.first_name,
+            "bot_username": bot_info.username
+        })
+    except Exception as e:
+        logger.error(f"Bot test error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 # === Start App ===
@@ -179,9 +205,9 @@ if __name__ == "__main__":
     initialize_csv()
     
     # Set webhook
-    webhook_url = "https://ehadir.onrender.com/webhook"  # Replace with your actual URL
+    webhook_url = "https://ehadir.onrender.com/webhook"
     try:
-        result = run_async(application.bot.set_webhook(webhook_url))
+        result = run_async(bot.set_webhook(webhook_url))
         if result:
             logger.info(f"✅ Webhook set successfully to: {webhook_url}")
         else:
@@ -191,5 +217,5 @@ if __name__ == "__main__":
     
     # Start Flask app
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Starting Flask app on port {port}")
+    logger.info(f"🚀 Starting Flask app on port {port} (Python 3.13 Compatible)")
     app.run(host="0.0.0.0", port=port, debug=False)
