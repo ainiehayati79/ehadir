@@ -5,7 +5,6 @@ import csv
 from datetime import datetime
 
 selfreport_bp = Blueprint('selfreport', __name__)
-
 BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'
 CHAT_ID = '-4983762228'
 LOG_FILE = 'self_report_log.csv'
@@ -13,24 +12,14 @@ LOG_FILE = 'self_report_log.csv'
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=1, use_context=True)
 
-
-# 📌 /selfreport command handler — generates user-specific button
 def start(update, context):
     user_id = update.effective_user.id
     keyboard = [[
-        InlineKeyboardButton(
-            "📝 I have self-reported!",
-            callback_data=f'self_report:{user_id}'
-        )
+        InlineKeyboardButton("📝 I have self-reported!", callback_data=f'self_report:{user_id}')
     ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(
-        'Click below to confirm your self-reporting:',
-        reply_markup=reply_markup
-    )
+    update.message.reply_text('Click below to confirm your self-reporting:', reply_markup=reply_markup)
 
-
-# ✅ Button click handler
 def button_handler(update, context):
     query = update.callback_query
     user = query.from_user
@@ -53,17 +42,11 @@ def button_handler(update, context):
         writer.writerow([user.id, user.full_name, timestamp])
 
     query.answer("✅ Self-report received!")
-    query.edit_message_text(
-        text=f"📝 Thank you {user.full_name}, your self-report is logged at {timestamp}."
-    )
+    query.edit_message_text(text=f"📝 Thank you {user.full_name}, your self-report is logged at {timestamp}.")
 
-
-# 🔁 Register Telegram bot handlers
 dispatcher.add_handler(CommandHandler("selfreport", start))
 dispatcher.add_handler(CallbackQueryHandler(button_handler))
 
-
-# 🔄 Webhook route — Telegram sends updates here
 @selfreport_bp.route("/webhook", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), bot)

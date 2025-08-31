@@ -3,8 +3,8 @@ import requests
 from datetime import datetime
 
 reminder_bp = Blueprint('reminder', __name__)
-BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'  # << your actual bot token here
-CHAT_ID = '-4983762228'                     # << your actual chat ID here (include the minus)
+BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'
+CHAT_ID = '-4983762228'
 
 @reminder_bp.route("/remind", methods=["GET"])
 def send_reminder():
