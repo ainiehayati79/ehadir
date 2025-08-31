@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 import csv
@@ -148,9 +149,14 @@ def webhook():
 @app.route("/remind", methods=["GET"])
 def send_reminder():
     try:
-        today = datetime.today().strftime('%d-%m-%Y')
+        # Get Malaysia time (UTC + 8 hours)
+        malaysia_time = datetime.utcnow() + timedelta(hours=8)
+        today = malaysia_time.strftime('%d-%m-%Y')
+        current_time = malaysia_time.strftime('%H:%M')
+        
         message = (
             f"🔔 *e-Hadir Reminder* ({today})\n\n"
+            f"⏰ Malaysia time: {current_time}\n\n"
             "✅ Please ensure:\n"
             "- Thumb-in *7:30 to 9.00 AM*\n"
             "- Thumb-out *1 minute before your official end time*\n\n"
@@ -158,11 +164,10 @@ def send_reminder():
             "Let's maintain full compliance ✔"
         )
         
-        # Send message in background loop
         run_in_background_loop(
             bot.send_message(
-                chat_id='-4983762228', 
-                text=message, 
+                chat_id='-4983762228',
+                text=message,
                 parse_mode="Markdown"
             )
         )
@@ -174,13 +179,19 @@ def send_reminder():
         logger.error(f"Reminder error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route("/cron/remind", methods=["GET"])
 def cron_remind():
     """Lightweight endpoint for cron job - minimal response"""
     try:
-        today = datetime.today().strftime('%d-%m-%Y')
+        # Get Malaysia time (UTC + 8 hours)
+        malaysia_time = datetime.utcnow() + timedelta(hours=8)
+        today = malaysia_time.strftime('%d-%m-%Y')
+        current_time = malaysia_time.strftime('%H:%M')
+        
         message = (
             f"🔔 *e-Hadir Reminder* ({today})\n\n"
+            f"⏰ Malaysia time: {current_time}\n\n"
             "✅ Please ensure:\n"
             "- Thumb-in *7:30 to 9.00 AM*\n"
             "- Thumb-out *1 minute before your official end time*\n\n"
@@ -196,11 +207,12 @@ def cron_remind():
             )
         )
         
-        return "SENT"  # Minimal response for cron job
+        return "SENT"
         
     except Exception as e:
         logger.error(f"Cron reminder error: {e}")
         return "FAILED"
+
 
 # === Health Check ===
 @app.route("/")
