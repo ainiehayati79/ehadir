@@ -61,6 +61,21 @@ def webhook():
     dispatcher.process_update(update)
     return "✅ Webhook handled"
 
+@app.route("/remind", methods=["GET"])
+def send_reminder():
+    today = datetime.today().strftime('%d-%m-%Y')
+    message = (
+        f"🔔 *e-Hadir Reminder* ({today})\n\n"
+        "✅ Please ensure:\n"
+        "- Thumb-in *7:30 to 9.00 AM*\n"
+        "- Thumb-out *1 minute before your official end time*\n\n"
+        f"📎 *e-Hadir record for {today}*\n"
+        "Let's maintain full compliance ✔"
+    )
+    bot.send_message(chat_id='-4983762228', text=message, parse_mode="Markdown")
+    return "✅ Reminder sent"
+
+
 # === Health Check ===
 @app.route("/")
 def home():
