@@ -95,7 +95,9 @@ async def handle_callback_query(update):
         await query.answer("⛔ You cannot self-report for someone else.", show_alert=True)
         return
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Get Malaysia time (UTC + 8 hours) - FIXED LINE
+    malaysia_time = datetime.utcnow() + timedelta(hours=8)
+    timestamp = malaysia_time.strftime("%Y-%m-%d %H:%M:%S")
     
     # Log to CSV
     try:
@@ -112,6 +114,8 @@ async def handle_callback_query(update):
     except Exception as e:
         logger.error(f"Error logging self-report: {e}")
         await query.answer("❌ Error logging self-report. Please try again.", show_alert=True)
+
+
 
 # === Process Update Function ===
 async def process_update(update):
