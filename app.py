@@ -280,6 +280,22 @@ def webhook_info():
         logger.error(f"Webhook info error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+from flask import send_file
+
+@app.route("/export", methods=["GET"])
+def export_csv():
+    """Export CSV file for download"""
+    try:
+        if os.path.exists(LOG_FILE):
+            return send_file(LOG_FILE, 
+                           mimetype='text/csv',
+                           as_attachment=True,
+                           download_name='ehadir_backup.csv')
+        else:
+            return "No backup data available", 404
+    except Exception as e:
+        return f"Error downloading CSV: {str(e)}", 500
+
 # === Start App ===
 if __name__ == "__main__":
     # Initialize CSV file
