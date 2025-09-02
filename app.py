@@ -184,23 +184,36 @@ def send_reminder():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/cron/remind", methods=["GET"])
+import time
+
+# Global variable to track last reminder time
+last_reminder_time = 0
+
+ @app.route("/cron/remind", methods=["GET"])
 def cron_remind():
-    """Lightweight endpoint for cron job - minimal response"""
+    logger.info(f"CRON REMIND TRIGGERED at {datetime.now()}")
+  
+    """Ultra-minimal endpoint with duplicate prevention"""
+    global last_reminder_time
+    
     try:
-        # Get Malaysia time (UTC + 8 hours)
+        current_timestamp = time.time()
+        
+        # Prevent duplicates - only allow 1 reminder per hour
+        if current_timestamp - last_reminder_time < 3600:  # 3600 seconds = 1 hour
+            return "SKIP", 200, {'Content-Type': 'text/plain'}
+        
         malaysia_time = datetime.utcnow() + timedelta(hours=8)
         today = malaysia_time.strftime('%d-%m-%Y')
         current_time = malaysia_time.strftime('%H:%M')
         
         message = (
-            f"🔔 *e-Hadir Reminder* ({today})\n\n"
-            f"⏰ Malaysia time: {current_time}\n\n"
-            "✅ Please ensure:\n"
-            "- Thumb-in *7:30 to 9.00 AM*\n"
-            "- Thumb-out *1 minute before your official end time*\n\n"
-            f"📎 *e-Hadir record for {today}*\n"
-            "Let's maintain full compliance ✔"
+            f"🔔 **e-HADIR DAILY REMINDER** 🔔\n"
+            f"📅 Date: {today}\n"
+            f"⏰ Time: {current_time}\n\n"
+            f"✅ Thumb-in: 7:30-9:00 AM\n"
+            f"✅ Thumb-out: Before end time\n\n"
+            f"🎯 Maintain full compliance!"
         )
         
         run_in_background_loop(
@@ -211,11 +224,15 @@ def cron_remind():
             )
         )
         
-        return "SENT"
+        # Record this reminder time
+        last_reminder_time = current_timestamp
+        
+        return "SENT", 200, {'Content-Type': 'text/plain'}
         
     except Exception as e:
         logger.error(f"Cron reminder error: {e}")
-        return "FAILED"
+        return "FAIL", 500, {'Content-Type': 'text/plain'}
+
 
 
 # === Health Check ===
