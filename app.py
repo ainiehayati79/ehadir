@@ -198,6 +198,104 @@ def cron_remind():
     except Exception as e:
         logger.error(f"Cron reminder error: {e}")
         return "FAIL", 500, {'Content-Type': 'text/plain'}
+        
+
+@app.route("/cron/afternoon", methods=["GET"])
+def cron_afternoon():
+    """4:15 PM thumb-out reminder with PDF"""
+    try:
+        malaysia_time = datetime.utcnow() + timedelta(hours=8)
+        today_display = malaysia_time.strftime('%d-%m-%Y')
+        current_time = malaysia_time.strftime('%H:%M')
+        
+        message = (
+            f"⏰ **THUMB-OUT REMINDER** ⏰\n"
+            f"📅 Date: {today_display} | Time: {current_time}\n\n"
+            f"📋 **Check your thumb-in time in PDF below**\n"
+            f"🧮 Calculate: Thumb-in + 9 hours = Thumb-out time\n"
+            f"Example: 7:30 AM → 4:31 PM\n\n"
+            f"⚠️ Complete 8 working hours before leaving!"
+        )
+        
+        run_in_background_loop(send_afternoon_reminder_with_pdf(message))
+        return "SENT", 200, {'Content-Type': 'text/plain'}
+        
+    except Exception as e:
+        logger.error(f"Afternoon reminder error: {e}")
+        return "FAIL", 500, {'Content-Type': 'text/plain'}
+
+async def send_afternoon_reminder_with_pdf(message):
+    """Send afternoon reminder with PDF attachment"""
+    try:
+        # Send message
+        await bot.send_message(
+            chat_id='-4983762228',
+            text=message,
+            parse_mode="Markdown"
+        )
+        
+        # Send PDF if available
+        malaysia_time = datetime.utcnow() + timedelta(hours=8)
+        pdf_filename = f"ehadir_{malaysia_time.strftime('%Y-%m-%d')}.pdf"
+        
+        if os.path.exists(pdf_filename):
+            with open(pdf_filename, 'rb') as pdf_file:
+                await bot.send_document(
+                    chat_id='-4983762228',
+                    document=pdf_file,
+                    caption=f"📋 Today's attendance - {malaysia_time.strftime('%d/%m/%Y')}"
+                )
+        else:
+            await bot.send_message(
+                chat_id='-4983762228',
+                text="📋 PDF not uploaded yet - contact HR"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error sending afternoon reminder: {e}")
+
+from werkzeug.utils import secure_filename
+
+@app.route("/upload/pdf", methods=["POST"])
+def upload_daily_pdf():
+    """Upload today's e-Hadir PDF"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
+        
+        file = request.files['file']
+        if file.filename == '' or not file.filename.lower().endswith('.pdf'):
+            return jsonify({"error": "Please upload a PDF file"}), 400
+        
+        # Save with today's date
+        malaysia_time = datetime.utcnow() + timedelta(hours=8)
+        filename = f"ehadir_{malaysia_time.strftime('%Y-%m-%d')}.pdf"
+        file.save(filename)
+        
+        return jsonify({
+            "status": "PDF uploaded successfully",
+            "filename": filename,
+            "size": f"{os.path.getsize(filename)} bytes",
+            "note": "Will be attached to 4:15 PM reminder"
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/upload", methods=["GET"])
+def upload_form():
+    """Simple upload form"""
+    return '''
+    <html>
+    <body>
+        <h2>Upload Today's e-Hadir PDF</h2>
+        <form method="POST" action="/upload/pdf" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".pdf" required>
+            <input type="submit" value="Upload PDF">
+        </form>
+    </body>
+    </html>
+    '''
 
 
 
