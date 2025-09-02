@@ -150,40 +150,6 @@ def webhook():
         logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/remind", methods=["GET"])
-def send_reminder():
-    try:
-        # Get Malaysia time (UTC + 8 hours)
-        malaysia_time = datetime.utcnow() + timedelta(hours=8)
-        today = malaysia_time.strftime('%d-%m-%Y')
-        current_time = malaysia_time.strftime('%H:%M')
-        
-        message = (
-            f"🔔 *e-Hadir Reminder* ({today})\n\n"
-            f"⏰ Malaysia time: {current_time}\n\n"
-            "✅ Please ensure:\n"
-            "- Thumb-in *7:30 to 9.00 AM*\n"
-            "- Thumb-out *1 minute before your official end time*\n\n"
-            f"📎 *e-Hadir record for {today}*\n"
-            "Let's maintain full compliance ✔"
-        )
-        
-        run_in_background_loop(
-            bot.send_message(
-                chat_id='-4983762228',
-                text=message,
-                parse_mode="Markdown"
-            )
-        )
-        
-        logger.info("Reminder sent successfully")
-        return jsonify({"status": "Reminder sent successfully"})
-        
-    except Exception as e:
-        logger.error(f"Reminder error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
 import time
 
 # Global variable to track last reminder time
