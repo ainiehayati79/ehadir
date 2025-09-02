@@ -189,7 +189,7 @@ import time
 # Global variable to track last reminder time
 last_reminder_time = 0
 
- @app.route("/cron/remind", methods=["GET"])
+@app.route("/cron/remind", methods=["GET"])
 def cron_remind():
     logger.info(f"CRON REMIND TRIGGERED at {datetime.now()}")
   
