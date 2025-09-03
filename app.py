@@ -1,13 +1,12 @@
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
 import csv
 import os
-from datetime import datetime
 import logging
 import asyncio
 import threading
-from functools import wraps
+import time
 
 # === Configuration ===
 BOT_TOKEN = '7582546703:AAEpBrae4on4d8LglJSqjjI-6LXiGTemZpg'
@@ -20,47 +19,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === Initialize Bot ===
+# Initialize Bot
 bot = Bot(token=BOT_TOKEN)
-
-# === Flask App ===
 app = Flask(__name__)
 
-# === Global event loop for async operations ===
+# Global event loop for async operations
 loop = None
 loop_thread = None
 
+# Track last reminder dates (daily, not hourly)
+last_morning_date = ""
+last_afternoon_date = ""
+
 def start_background_loop():
-    """Start event loop in background thread"""
     global loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
 def run_in_background_loop(coro):
-    """Run coroutine in background event loop"""
     global loop, loop_thread
-    
     if loop is None or loop_thread is None or not loop_thread.is_alive():
         loop_thread = threading.Thread(target=start_background_loop, daemon=True)
         loop_thread.start()
-        # Give the thread time to start
-        import time
         time.sleep(0.1)
-    
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=30)  # 30 second timeout
+    return future.result(timeout=30)
 
-# === Create CSV file with headers if it doesn't exist ===
 def initialize_csv():
     if not os.path.exists(LOG_FILE):
         with open(LOG_FILE, 'w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
             writer.writerow(['User ID', 'Full Name', 'Timestamp'])
 
-# === /selfreport Command Handler ===
+# === FIXED: Private chat only ===
 async def handle_selfreport_command(update):
     try:
+        # Check if this is a private chat (not a group)
+        if update.effective_chat.type != 'private':
+            logger.info(f"Ignoring /selfreport command in group chat: {update.effective_chat.id}")
+            return
+        
         user_id = update.effective_user.id
         keyboard = [[
             InlineKeyboardButton(
@@ -74,11 +73,10 @@ async def handle_selfreport_command(update):
             text="Click below to confirm your self-reporting:",
             reply_markup=reply_markup
         )
-        logger.info(f"Selfreport command handled for user {update.effective_user.full_name}")
+        logger.info(f"Selfreport command handled for user {update.effective_user.full_name} in private chat")
     except Exception as e:
         logger.error(f"Error in selfreport command: {e}")
 
-# === Callback Button Handler ===
 async def handle_callback_query(update):
     query = update.callback_query
     user = query.from_user
@@ -95,11 +93,10 @@ async def handle_callback_query(update):
         await query.answer("⛔ You cannot self-report for someone else.", show_alert=True)
         return
 
-    # Get Malaysia time (UTC + 8 hours) - FIXED LINE
+    # Get Malaysia time
     malaysia_time = datetime.utcnow() + timedelta(hours=8)
     timestamp = malaysia_time.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Log to CSV
     try:
         with open(LOG_FILE, 'a', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
@@ -110,76 +107,55 @@ async def handle_callback_query(update):
             text=f"📝 Thank you {user.full_name}, your self-report is logged at {timestamp}."
         )
         logger.info(f"Self-report logged for user {user.full_name} ({user.id}) at {timestamp}")
-        
     except Exception as e:
         logger.error(f"Error logging self-report: {e}")
         await query.answer("❌ Error logging self-report. Please try again.", show_alert=True)
 
-
-
-# === Process Update Function ===
 async def process_update(update):
     try:
-        # Handle /selfreport command
         if update.message and update.message.text == '/selfreport':
             await handle_selfreport_command(update)
-        
-        # Handle callback queries (button presses)
         elif update.callback_query:
             await handle_callback_query(update)
-            
     except Exception as e:
         logger.error(f"Error processing update: {e}")
 
-# === Telegram Webhook Endpoint ===
+# === WEBHOOKS ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
         json_data = request.get_json(force=True)
         if json_data:
             update = Update.de_json(json_data, bot)
-            
-            # Process update in background loop
             run_in_background_loop(process_update(update))
-            
             return jsonify({"status": "ok"})
         else:
             return jsonify({"status": "error", "message": "No JSON data"}), 400
-            
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-import time
-
-# Global variable to track last reminder time
-last_reminder_time = 0
-
+# === FIXED: Daily morning reminder ===
 @app.route("/cron/remind", methods=["GET"])
 def cron_remind():
-    logger.info(f"CRON REMIND TRIGGERED at {datetime.now()}")
-  
-    """Ultra-minimal endpoint with duplicate prevention"""
-    global last_reminder_time
-    
+    global last_morning_date
     try:
-        current_timestamp = time.time()
-        
-        # Prevent duplicates - only allow 1 reminder per hour
-        if current_timestamp - last_reminder_time < 3600:  # 3600 seconds = 1 hour
-            return "SKIP", 200, {'Content-Type': 'text/plain'}
-        
         malaysia_time = datetime.utcnow() + timedelta(hours=8)
-        today = malaysia_time.strftime('%d-%m-%Y')
+        today = malaysia_time.strftime('%Y-%m-%d')
+        
+        # Prevent duplicates - only allow 1 reminder per DAY
+        if today == last_morning_date:
+            return "SKIP"
+        
+        today_display = malaysia_time.strftime('%d-%m-%Y')
         current_time = malaysia_time.strftime('%H:%M')
         
         message = (
-            f"🔔 **e-HADIR DAILY REMINDER** 🔔\n"
-            f"📅 Date: {today}\n"
-            f"⏰ Time: {current_time}\n\n"
+            f"🔔 e-HADIR MORNING REMINDER 🔔\n"
+            f"📅 {today_display} | ⏰ {current_time}\n\n"
             f"✅ Thumb-in: 7:30-9:00 AM\n"
-            f"✅ Thumb-out: Before end time\n\n"
-            f"🎯 Maintain full compliance!"
+            f"🤖 Machine down? Use /selfreport\n"
+            f"🎯 Start your day right!"
         )
         
         run_in_background_loop(
@@ -190,51 +166,50 @@ def cron_remind():
             )
         )
         
-        # Record this reminder time
-        last_reminder_time = current_timestamp
-        
-        return "SENT", 200, {'Content-Type': 'text/plain'}
-        
+        last_morning_date = today
+        return "OK"
     except Exception as e:
-        logger.error(f"Cron reminder error: {e}")
-        return "FAIL", 500, {'Content-Type': 'text/plain'}
-        
+        logger.error(f"Morning reminder error: {e}")
+        return "FAIL"
 
+# === FIXED: Daily afternoon reminder ===
 @app.route("/cron/afternoon", methods=["GET"])
 def cron_afternoon():
-    """4:15 PM thumb-out reminder with PDF"""
+    global last_afternoon_date
     try:
         malaysia_time = datetime.utcnow() + timedelta(hours=8)
+        today = malaysia_time.strftime('%Y-%m-%d')
+        
+        # Prevent duplicates - only allow 1 reminder per DAY
+        if today == last_afternoon_date:
+            return "SKIP"
+        
         today_display = malaysia_time.strftime('%d-%m-%Y')
         current_time = malaysia_time.strftime('%H:%M')
         
         message = (
-            f"⏰ **THUMB-OUT REMINDER** ⏰\n"
-            f"📅 Date: {today_display} | Time: {current_time}\n\n"
-            f"📋 **Check your thumb-in time in PDF below**\n"
-            f"🧮 Calculate: Thumb-in + 9 hours = Thumb-out time\n"
-            f"Example: 7:30 AM → 4:31 PM\n\n"
-            f"⚠️ Complete 8 working hours before leaving!"
+            f"⏰ THUMB-OUT REMINDER ⏰\n"
+            f"📅 {today_display} | ⏰ {current_time}\n\n"
+            f"📋 Check PDF below for thumb-in times\n"
+            f"🧮 Formula: Thumb-in + 9 hours\n"
+            f"⚠️ Complete 8 hours before leaving!"
         )
         
         run_in_background_loop(send_afternoon_reminder_with_pdf(message))
-        return "SENT", 200, {'Content-Type': 'text/plain'}
-        
+        last_afternoon_date = today
+        return "OK"
     except Exception as e:
         logger.error(f"Afternoon reminder error: {e}")
-        return "FAIL", 500, {'Content-Type': 'text/plain'}
+        return "FAIL"
 
 async def send_afternoon_reminder_with_pdf(message):
-    """Send afternoon reminder with PDF attachment"""
     try:
-        # Send message
         await bot.send_message(
             chat_id='-4983762228',
             text=message,
             parse_mode="Markdown"
         )
         
-        # Send PDF if available
         malaysia_time = datetime.utcnow() + timedelta(hours=8)
         pdf_filename = f"ehadir_{malaysia_time.strftime('%Y-%m-%d')}.pdf"
         
@@ -248,17 +223,14 @@ async def send_afternoon_reminder_with_pdf(message):
         else:
             await bot.send_message(
                 chat_id='-4983762228',
-                text="📋 PDF not uploaded yet - contact HR"
+                text="📋 PDF not available - contact HR"
             )
-            
     except Exception as e:
         logger.error(f"Error sending afternoon reminder: {e}")
 
-from werkzeug.utils import secure_filename
-
+# === PDF UPLOAD ===
 @app.route("/upload/pdf", methods=["POST"])
 def upload_daily_pdf():
-    """Upload today's e-Hadir PDF"""
     try:
         if 'file' not in request.files:
             return jsonify({"error": "No file uploaded"}), 400
@@ -267,7 +239,6 @@ def upload_daily_pdf():
         if file.filename == '' or not file.filename.lower().endswith('.pdf'):
             return jsonify({"error": "Please upload a PDF file"}), 400
         
-        # Save with today's date
         malaysia_time = datetime.utcnow() + timedelta(hours=8)
         filename = f"ehadir_{malaysia_time.strftime('%Y-%m-%d')}.pdf"
         file.save(filename)
@@ -275,43 +246,34 @@ def upload_daily_pdf():
         return jsonify({
             "status": "PDF uploaded successfully",
             "filename": filename,
-            "size": f"{os.path.getsize(filename)} bytes",
-            "note": "Will be attached to 4:15 PM reminder"
+            "size": f"{os.path.getsize(filename)} bytes"
         })
-        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route("/upload", methods=["GET"])
 def upload_form():
-    """Simple upload form"""
     return '''
-    <html>
-    <body>
+    <html><body>
         <h2>Upload Today's e-Hadir PDF</h2>
         <form method="POST" action="/upload/pdf" enctype="multipart/form-data">
             <input type="file" name="file" accept=".pdf" required>
             <input type="submit" value="Upload PDF">
         </form>
-    </body>
-    </html>
+    </body></html>
     '''
 
-
-
-# === Health Check ===
+# === OTHER ROUTES ===
 @app.route("/")
 def home():
     return jsonify({
-        "status": "e-Hadir Webhook Bot is running",
-        "version": "2.2 - Fixed Async",
-        "python_telegram_bot": "20.3",
-        "loop_status": "active" if loop and not loop.is_closed() else "inactive"
+        "status": "e-Hadir Bot Running",
+        "version": "3.0 - Clean & Fixed",
+        "endpoints": ["/logs", "/dashboard", "/upload", "/export"]
     })
 
 @app.route("/logs", methods=["GET"])
 def view_logs():
-    """Endpoint to view recent self-report logs"""
     try:
         if os.path.exists(LOG_FILE):
             with open(LOG_FILE, 'r', encoding='utf-8') as file:
@@ -324,48 +286,10 @@ def view_logs():
         else:
             return jsonify({"logs": [], "total_entries": 0})
     except Exception as e:
-        logger.error(f"Error reading logs: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/test", methods=["GET"])
-def test_bot():
-    """Test endpoint to check if bot is working"""
-    try:
-        # Get bot info in background loop
-        bot_info = run_in_background_loop(bot.get_me())
-        return jsonify({
-            "status": "Bot is working",
-            "bot_name": bot_info.first_name,
-            "bot_username": bot_info.username,
-            "bot_id": bot_info.id
-        })
-    except Exception as e:
-        logger.error(f"Bot test error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/webhook_info", methods=["GET"])
-def webhook_info():
-    """Get current webhook information"""
-    try:
-        webhook_info = run_in_background_loop(bot.get_webhook_info())
-        return jsonify({
-            "url": webhook_info.url,
-            "has_custom_certificate": webhook_info.has_custom_certificate,
-            "pending_update_count": webhook_info.pending_update_count,
-            "last_error_date": webhook_info.last_error_date,
-            "last_error_message": webhook_info.last_error_message,
-            "max_connections": webhook_info.max_connections,
-            "allowed_updates": webhook_info.allowed_updates
-        })
-    except Exception as e:
-        logger.error(f"Webhook info error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-from flask import send_file
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/export", methods=["GET"])
 def export_csv():
-    """Export CSV file for download"""
     try:
         if os.path.exists(LOG_FILE):
             return send_file(LOG_FILE, 
@@ -373,30 +297,24 @@ def export_csv():
                            as_attachment=True,
                            download_name='ehadir_backup.csv')
         else:
-            return "No backup data available", 404
+            return "No data available", 404
     except Exception as e:
-        return f"Error downloading CSV: {str(e)}", 500
+        return f"Error: {str(e)}", 500
 
-# === Start App ===
+# === START APP ===
 if __name__ == "__main__":
-    # Initialize CSV file
     initialize_csv()
     
-    # Start background event loop
-    logger.info("Starting background event loop...")
-    
-    # Set webhook
     webhook_url = "https://ehadir.onrender.com/webhook"
     try:
         result = run_in_background_loop(bot.set_webhook(webhook_url))
         if result:
-            logger.info(f"✅ Webhook set successfully to: {webhook_url}")
+            logger.info(f"✅ Webhook set successfully")
         else:
             logger.error("❌ Failed to set webhook")
     except Exception as e:
-        logger.error(f"❌ Failed to set webhook: {e}")
+        logger.error(f"❌ Webhook error: {e}")
     
-    # Start Flask app
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Starting Flask app on port {port} (Fixed Async)")
+    logger.info(f"🚀 Starting e-Hadir Bot on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
